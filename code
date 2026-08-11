@@ -1,0 +1,179 @@
+SELECT * FROM product_category_name_translation;
+COPY olist_customers_dataset 
+FROM 'C:/Users/Home/Desktop/brazil commerce/olist_customers_dataset.csv' 
+WITH (
+    FORMAT CSV,
+    HEADER true,
+    DELIMITER ',',
+    QUOTE '"',
+    ESCAPE '"'
+);
+SELECT  * FROM olist_customers_dataset;
+SELECT COUNT (customer_id) FROM olist_customers_dataset;
+SELECT * FROM olist_geolocation_dataset;
+SELECT COUNT (geolocation_zip_code_prefix) FROM olist_geolocation_dataset;
+SELECT * FROM olist_order_items_dataset;
+SELECT COUNT (order_id) FROM olist_order_items_dataset;
+SELECT * FROM olist_order_payments_dataset;
+SELECT COUNT (order_id) FROM olist_order_payments_dataset;
+SELECT * FROM olist_order_reviews_dataset;
+SELECT COUNT (review_id) FROM olist_order_reviews_dataset;
+SELECT COUNT (*) FROM olist_order_reviews_dataset;
+SELECT * FROM olist_orders_dataset;
+SELECT * FROM olist_products_dataset;
+SELECT * FROM olist_sellers_dataset;
+SELECT * FROM product_category_name_translation;
+COPY olist_orders_dataset
+FROM 'C:\Users\Home\Desktop\brazil commerce\olist_orders_dataset.csv'
+DELIMITER ','
+CSV HEADER
+ENCODING 'UTF8';
+SELECT *  FROM olist_orders_dataset;
+SELECT COUNT (order_id) FROM olist_orders_dataset;
+COPY olist_order_reviews_dataset
+FROM 'C:\Users\Home\Desktop\brazil commerce\olist_order_reviews_dataset.csv'
+DELIMITER ','
+CSV HEADER
+ENCODING 'UTF8';
+
+COPY olist_sellers_dataset
+FROM 'C:\Users\Home\Desktop\brazil commerce\olist_sellers_dataset.csv'
+DELIMITER ','
+CSV HEADER
+ENCODING 'UTF8';
+COPY product_category_name_translation
+FROM 'C:\Users\Home\Desktop\brazil commerce\product_category_name_translation.csv'
+DELIMITER ','
+CSV HEADER
+ENCODING 'UTF8';
+
+COPY olist_products_dataset
+FROM 'C:\Users\Home\Desktop\brazil commerce\olist_products_dataset.csv'
+DELIMITER ','
+CSV HEADER
+ENCODING 'UTF8';
+
+ALTER TABLE olist_orders_dataset RENAME TO orders;
+ALTER TABLE olist_customers_dataset RENAME TO customers;
+ALTER TABLE olist_order_items_dataset RENAME TO order_items;
+ALTER TABLE olist_products_dataset RENAME TO products;
+ALTER TABLE olist_sellers_dataset RENAME TO sellers;
+ALTER TABLE olist_order_payments_dataset RENAME TO payments;
+ALTER TABLE product_category_name_translation RENAME TO category;
+ALTER TABLE olist_order_reviews_dataset RENAME TO reviews;
+ALTER TABLE olist_geolocation_dataset RENAME TO geo;
+
+SELECT * FROM category;
+SELECT * FROM customers;
+SELECT * FROM geo;
+SELECT * FROM order_items;
+SELECT * FROM orders;
+SELECT * FROM payments;
+SELECT * FROM products;
+SELECT * FROM reviews;
+SELECT * FROM sellers;
+
+SELECT * FROM orders o JOIN customers c ON o.customer_id=c.customer_id
+JOIN order_items oi ON o.order_id=oi.order_id
+JOIN payments p ON o.order_id=p.order_id;
+
+--Уникальный пользователи в базе
+SELECT COUNT (DISTINCT customer_unique_id) AS "Уникальные пользователи" FROM customers;
+
+--Количество где больше 2 заказов для себя
+SELECT COUNT (*) FROM (SELECT customer_id, COUNT (*) FROM customers GROUP BY customer_id HAVING(COUNT (customer_id)) > 1 ORDER BY count ASC);
+
+--Успешная доставка
+SELECT COUNT (order_status) AS "Успешная доставка" FROM orders WHERE order_status = 'delivered';
+
+--Неуспешная доставка
+SELECT COUNT (order_status) AS "Неуспешная доставка" FROM orders WHERE order_status != 'delivered';
+
+--Совмещение
+SELECT order_status, COUNT (*) AS "Количество статуса" FROM orders GROUP by order_status ORDER BY "Количество статуса" DESC;
+
+--Процент успешной доставки
+
+SELECT ROUND((SELECT COUNT (order_status) FROM orders WHERE order_status = 'delivered') * 100.00
+/(SELECT COUNT (order_status) FROM orders), 2) || '%' AS "Доставленные товары";
+
+--Топ 5 городов по количеству заказов
+
+SELECT customer_city, COUNT (*) AS "Заказы в городах" FROM (SELECT * FROM customers c INNER JOIN orders o ON c.customer_id=o.customer_id)
+GROUP BY customer_city ORDER BY "Заказы в городах" DESC LIMIT 5;
+
+--Средний чек по заказу
+
+CREATE VIEW o_and_oi AS (SELECT * FROM orders o INNER JOIN order_items oi USING (order_id));
+SELECT order_status, ROUND((SUM(price)::numeric) / (COUNT(DISTINCT order_id)), 2) AS "Средний чек по заказу" FROM o_and_oi 
+GROUP BY order_status ORDER by "Средний чек по заказу" DESC;
+
+-- 5 категорий, принесших больше всмего денег
+CREATE VIEW transl_oi AS (SELECT * FROM products INNER JOIN category USING (product_category_name)
+INNER JOIN order_items USING (product_id));
+SELECT product_category_name_english AS "Категория", SUM (price) AS "ВЫРУЧКА" FROM transl_oi GROUP BY "Категория"
+ORDER BY "ВЫРУЧКА" DESC LIMIT 5;
+
+-- 5 категорий, принесших больше всмего денег в процентах
+CREATE VIEW "Топ 5" AS (SELECT product_category_name_english AS "Категория", SUM (price) AS "ВЫРУЧКА" FROM transl_oi GROUP BY "Категория"
+ORDER BY "ВЫРУЧКА" DESC LIMIT 5);
+SELECT "Категория", ROUND(("ВЫРУЧКА" * 100.00/(SELECT SUM(price) FROM transl_oi))::numeric, 2) AS "Процент от всей прибыли" FROM "Топ 5";
+
+-- Заказы в каждом месяце года 2017
+
+SELECT TO_CHAR(TO_DATE(order_purchase_timestamp, 'YYYY-MM-DD HH24:MI:SS'), 'MONTH') AS "МЕСЯЦ", COUNT (*) AS "Количество" 
+FROM orders WHERE EXTRACT ("Year" FROM TO_DATE(order_purchase_timestamp, 'YYYY-MM-DD HH24:MI:SS')) = 2017  GROUP BY "МЕСЯЦ" ORDER BY "Количество" DESC;
+
+-- Топ по сумме потраченной
+
+CREATE VIEW pay AS (SELECT * FROM payments INNER JOIN orders USING (order_id));
+SELECT customer_id, SUM (payment_value) AS "СУММА ПОКУПОК" FROM pay GROUP BY customer_id ORDER BY "СУММА ПОКУПОК" DESC;
+
+--Самая быстрая доставка
+CREATE VIEW ord_cus AS (SELECT * FROM orders INNER JOIN customers USING (customer_id));
+SELECT customer_city, ROUND(AVG(EXTRACT (EPOCH FROM
+(TO_TIMESTAMP (order_delivered_customer_date, 'YYYY-MM-DD  H24:MI:SS') - TO_TIMESTAMP (order_purchase_timestamp, 'YYYY-MM-DD H24:MI:SS'))) / 86400.0), 1) AS "Среднее время доставки (в днях)"
+FROM ord_cus WHERE order_purchase_timestamp IS NOT NULL  AND order_delivered_carrier_date != '' AND order_delivered_customer_date IS NOT NULL
+GROUP BY customer_city ORDER BY "Среднее время доставки (в днях)";
+
+--Больше всего заказов у продавца и средний рейтинг
+CREATE VIEW rev AS (SELECT * FROM order_items INNER JOIN reviews USING (order_id));
+SELECT seller_id, COUNT (seller_id) AS "Количество заказов", ROUND (AVG (review_score), 1) "Средняя оценка" FROM rev GROUP BY seller_id ORDER BY "Количество заказов" DESC;
+
+-- Сколько денег приносил магази в каждом месячце 2к18 года?
+
+SELECT TO_CHAR(TO_TIMESTAMP (order_purchase_timestamp, 'YYYY-MM-DD HH24:MI:SS'), 'Month') AS "Месяц", COUNT (*) AS "Количество заказов"
+FROM orders WHERE EXTRACT ('Year' FROM TO_TIMESTAMP (order_purchase_timestamp, 'YYYY-MM-DD HH24:MI:SS') ) = 2018 GROUP BY "Месяц" ORDER BY "Количество заказов" DESC;
+
+--Средний чек и время доставки
+CREATE VIEW pir AS (SELECT * FROM payments INNER JOIN orders USING (order_id) INNER JOIN customers USING (customer_id));
+SELECT customer_state, ROUND(AVG(EXTRACT( EPOCH FROM (TO_TIMESTAMP (order_delivered_customer_date, 'YYYY-MM-DD HH24:MI:SS')) -
+(TO_TIMESTAMP (order_purchase_timestamp, 'YYYY-MM-DD HH24:MI:SS'))) / 86400.0), 1) AS "Среднее время доставки", AVG (payment_value) AS "Средний чек"
+FROM pir GROUP BY customer_state ORDER BY "Среднее время доставки" ASC;
+
+--Вероятность отмены заказа при определенном типе оплаты
+CREATE VIEW paymnt AS(SELECT * FROM payments INNER JOIN orders USING (order_id));
+SELECT payment_type, order_status, COUNT (order_status) AS "Количество" FROM paymnt GROUP BY payment_type, order_status ORDER BY "Количество" DESC;
+
+-- Средний чек в зависимости от типа оплаты
+SELECT payment_type, ROUND(AVG (payment_value)) AS "Средний чек" FROM payments GROUP BY payment_type ORDER BY "Средний чек" DESC;
+
+--ПОКУПКИ С not_defined
+SELECT * FROM payments WHERE payment_type = 'not_defined';
+
+--Когда оставляют комменты а когда нет
+SELECT "Случаи", COUNT (*) AS "Количество" FROM (SELECT CASE WHEN review_comment_title = '' OR review_comment_title IS NULL THEN 'Нет комментария к отзыву' ELSE 'Есть комментарий к отзыву' END AS "Случаи" FROM reviews) GROUP BY "Случаи";
+
+--В каких городах больше всего продавцов
+CREATE VIEW "full_3" AS (SELECT * FROM order_items INNER JOIN reviews USING (order_id) INNER JOIN sellers USING (seller_id) INNER JOIN orders USING (order_id) INNER JOIN payments USING (order_id));
+SELECT seller_city, COUNT (*) AS "Количество значений", ROUND(AVG(price)::numeric) AS "Средний чек", ROUND(AVG(review_score), 2) AS "Средняя оценка"
+FROM "full" GROUP BY seller_city ORDER BY "Средняя оценка" DESC;
+
+-- Зависимость штата, средней времени доставки, отзыв.
+SELECT * FROM "full_3"; 
+SELECT seller_state, ROUND( AVG (EXTRACT(EPOCH FROM (TO_TIMESTAMP ("order_delivered_customer_date", 'YYYY-MM-DD HH24:MI:SS') - 
+TO_TIMESTAMP ("order_purchase_timestamp", 'YYYY-MM-DD HH24:MI:SS')))):: numeric / 86400.0, 1) AS "Количество дней доставки среднее", 
+COUNT (seller_state) AS "Количество заказов из штатов", ROUND(AVG (payment_value)) AS "Средний чек", ROUND(AVG(review_score), 1) AS "Средняя оценка"
+FROM full_3 WHERE order_status = 'delivered'
+GROUP BY seller_state ORDER BY "Количество дней доставки среднее" DESC;
+SELECT * FROM "full_3" WHERE seller_state = 'AM'
